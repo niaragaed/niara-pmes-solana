@@ -1,9 +1,15 @@
-//! Niara-PMEs na Solana — captação de PMEs nos moldes da Res. CVM 88.
+//! Niara SMEs on Solana: SME fundraising modeled on CVM Resolution 88.
 //!
-//! Port do fluxo de captação do niaragaed/niara-contracts-PMEs (Sepolia):
+//! Port of the fundraising flow in niaragaed/niara-contracts-PMEs (Sepolia):
 //! `OfertaOrquestrador` + `OfertaCaptacao` + `ParticipacaoToken` + `MockBRL`,
-//! com as mesmas regras de aporte, encerramento, resgate, liberação com taxa
-//! e reembolso. Moeda de teste (MockBRL), sem valor; protótipo sem auditoria.
+//! with the same rules for investment, closing, redemption, release with fee
+//! and refund. Test currency (MockBRL) with no value; unaudited prototype.
+//!
+//! Instruction, account, event, error and seed names stay in Portuguese
+//! because they define the program deployed on devnet. Glossary: criar_oferta
+//! = create offering, aportar = invest, encerrar = close, resgatar = redeem
+//! shares, liberar = release funds, reembolsar = refund, cancelar = cancel,
+//! pausar = pause, emissor = issuer, qualificado = qualified investor.
 pub mod constants;
 pub mod error;
 pub mod instructions;
@@ -74,12 +80,12 @@ pub mod niara_pmes_solana {
         instructions::admin::handle_cancelar_oferta(ctx)
     }
 
-    // ── moeda de teste ───────────────────────────────────────────────────────
+    // ── test currency ────────────────────────────────────────────────────────
     pub fn faucet_mbrl(ctx: Context<FaucetMbrl>, valor: u64) -> Result<()> {
         instructions::faucet::handle_faucet_mbrl(ctx, valor)
     }
 
-    // ── ciclo da oferta ──────────────────────────────────────────────────────
+    // ── offering lifecycle ───────────────────────────────────────────────────
     pub fn criar_oferta(ctx: Context<CriarOferta>, parametros: ParametrosOferta) -> Result<()> {
         instructions::criar_oferta::handle_criar_oferta(ctx, parametros)
     }

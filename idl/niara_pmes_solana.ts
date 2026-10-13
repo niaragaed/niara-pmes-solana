@@ -10,7 +10,7 @@ export type NiaraPmesSolana = {
     "name": "niaraPmesSolana",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "Niara-PMEs na Solana: captação de PMEs (Res. CVM 88) com escrow on-chain"
+    "description": "Niara SMEs on Solana: SME fundraising (CVM Res. 88) with on-chain escrow"
   },
   "instructions": [
     {
@@ -66,7 +66,7 @@ export type NiaraPmesSolana = {
         {
           "name": "qualificado",
           "docs": [
-            "varejo); o seed garante que ninguém passa a conta de outra pessoa."
+            "the seed guarantees nobody can pass someone else's account."
           ],
           "pda": {
             "seeds": [
@@ -336,9 +336,9 @@ export type NiaraPmesSolana = {
         {
           "name": "mintCota",
           "docs": [
-            "Cotas: mint e congelamento pela própria oferta (só ela emite, e cada",
-            "conta de cotas é congelada no resgate — sem transferência, como a",
-            "`DenyAllTransferPolicy` da EVM)."
+            "Shares: minted and frozen by the offering itself (only it issues them, and",
+            "each share account is frozen on redemption, so no transfers, like the",
+            "EVM `DenyAllTransferPolicy`)."
           ],
           "writable": true,
           "pda": {
@@ -801,7 +801,7 @@ export type NiaraPmesSolana = {
         {
           "name": "mintMoeda",
           "docs": [
-            "MockBRL: autoridade de mint é a própria config (faucet controlado pelo programa)."
+            "MockBRL: the mint authority is the config itself (faucet controlled by the program)."
           ],
           "writable": true,
           "pda": {
@@ -821,8 +821,8 @@ export type NiaraPmesSolana = {
         {
           "name": "programa",
           "docs": [
-            "Só quem detém a autoridade de upgrade inicializa — impede que um",
-            "terceiro \"sequestre\" a config logo após o deploy."
+            "Only the holder of the upgrade authority can initialize, which prevents a",
+            "third party from hijacking the config right after deployment."
           ],
           "address": "FKefGFhUmgXBM1xCtSFBWpoNnp3wuPJs6Yddpsp67J2y"
         },
@@ -1842,8 +1842,8 @@ export type NiaraPmesSolana = {
     {
       "name": "config",
       "docs": [
-        "Configuração global (PDA [\"config\"]). Equivale aos parâmetros do",
-        "`OfertaOrquestrador` + papel de admin."
+        "Global configuration (PDA [\"config\"]). Equivalent to the parameters of",
+        "`OfertaOrquestrador` plus the admin role."
       ],
       "type": {
         "kind": "struct",
@@ -1855,7 +1855,7 @@ export type NiaraPmesSolana = {
           {
             "name": "mintMoeda",
             "docs": [
-              "Mint do MockBRL (PDA [\"mbrl\"]), autoridade = esta config."
+              "MockBRL mint (PDA [\"mbrl\"]); authority = this config."
             ],
             "type": "pubkey"
           },
@@ -1905,7 +1905,7 @@ export type NiaraPmesSolana = {
     {
       "name": "emissor",
       "docs": [
-        "Emissor autorizado (PDA [\"emissor\", wallet])."
+        "Authorized issuer (PDA [\"emissor\", wallet])."
       ],
       "type": {
         "kind": "struct",
@@ -1921,7 +1921,7 @@ export type NiaraPmesSolana = {
           {
             "name": "ofertaAberta",
             "docs": [
-              "Oferta ainda aberta deste emissor (no máximo uma, como na EVM)."
+              "This issuer's still-open offering (at most one, as on EVM)."
             ],
             "type": {
               "option": "pubkey"
@@ -1930,7 +1930,7 @@ export type NiaraPmesSolana = {
           {
             "name": "totalOfertas",
             "docs": [
-              "Quantas ofertas já criou; é o índice da próxima (seed da oferta)."
+              "How many offerings it has created; also the index of the next one (offering seed)."
             ],
             "type": "u32"
           },
@@ -1977,8 +1977,8 @@ export type NiaraPmesSolana = {
     {
       "name": "oferta",
       "docs": [
-        "Oferta de captação (PDA [\"oferta\", emissor, indice LE]). Junta o que na",
-        "EVM é ParticipacaoToken (metadados) + OfertaCaptacao (escrow e regras)."
+        "Fundraising offering (PDA [\"oferta\", issuer, index LE]). Combines what on",
+        "EVM is ParticipacaoToken (metadata) + OfertaCaptacao (escrow and rules)."
       ],
       "type": {
         "kind": "struct",
@@ -1994,14 +1994,14 @@ export type NiaraPmesSolana = {
           {
             "name": "mintCota",
             "docs": [
-              "Mint das cotas (PDA [\"cota\", oferta]), 0 casas, autoridade = oferta."
+              "Share mint (PDA [\"cota\", offering]), 0 decimals; authority = the offering."
             ],
             "type": "pubkey"
           },
           {
             "name": "cofre",
             "docs": [
-              "Conta de escrow em mBRL (PDA [\"cofre\", oferta]), autoridade = oferta."
+              "Escrow account in mBRL (PDA [\"cofre\", offering]); authority = the offering."
             ],
             "type": "pubkey"
           },
@@ -2020,7 +2020,7 @@ export type NiaraPmesSolana = {
           {
             "name": "cnpjRef",
             "docs": [
-              "keccak256(CNPJ), igual ao `cnpjRef` da EVM: identifica sem expor o CNPJ."
+              "keccak256(CNPJ), same as `cnpjRef` on EVM: identifies the company without exposing its CNPJ."
             ],
             "type": {
               "array": [
@@ -2261,7 +2261,7 @@ export type NiaraPmesSolana = {
     {
       "name": "posicao",
       "docs": [
-        "Posição de um investidor numa oferta (PDA [\"posicao\", oferta, investidor])."
+        "An investor's position in an offering (PDA [\"posicao\", offering, investor])."
       ],
       "type": {
         "kind": "struct",
@@ -2312,7 +2312,7 @@ export type NiaraPmesSolana = {
     {
       "name": "qualificado",
       "docs": [
-        "Investidor qualificado (PDA [\"qualificado\", wallet]): sem teto por investidor."
+        "Qualified investor (PDA [\"qualificado\", wallet]): no per-investor cap."
       ],
       "type": {
         "kind": "struct",

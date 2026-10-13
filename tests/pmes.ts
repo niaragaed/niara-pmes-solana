@@ -8,10 +8,13 @@ import {
 import { assert } from "chai";
 import { NiaraPmesSolana } from "../target/types/niara_pmes_solana";
 
+// Program methods, account names, fields, seeds and error names stay in
+// Portuguese: they belong to the program deployed on devnet (see lib.rs).
+
 const { PublicKey, Keypair, LAMPORTS_PER_SOL, Transaction } = anchor.web3;
 type PK = anchor.web3.PublicKey;
 
-const MBRL = 1_000_000; // 6 casas
+const MBRL = 1_000_000; // 6 decimals
 const mbrl = (n: number) => new BN(n).mul(new BN(MBRL));
 const BPF_UPGRADEABLE = new PublicKey(
   "BPFLoaderUpgradeab1e11111111111111111111111"
@@ -23,58 +26,59 @@ describe("niara-pmes (Solana)", () => {
   const program = anchor.workspace.niaraPmesSolana as Program<NiaraPmesSolana>;
   const conn = provider.connection;
   const admin = provider.wallet as anchor.Wallet;
-  const protocolo = Keypair.generate();
+  const protocol = Keypair.generate();
 
   const pda = (...seeds: (Buffer | Uint8Array)[]) =>
     PublicKey.findProgramAddressSync(seeds, program.programId)[0];
   const configPda = pda(Buffer.from("config"));
-  const mintMoeda = pda(Buffer.from("mbrl"));
-  const emissorPda = (w: PK) => pda(Buffer.from("emissor"), w.toBuffer());
-  const ofertaPda = (w: PK, i: number) => {
+  const currencyMint = pda(Buffer.from("mbrl"));
+  const issuerPda = (w: PK) => pda(Buffer.from("emissor"), w.toBuffer());
+  const offeringPda = (w: PK, i: number) => {
     const idx = Buffer.alloc(4);
     idx.writeUInt32LE(i);
     return pda(Buffer.from("oferta"), w.toBuffer(), idx);
   };
-  const posicaoPda = (o: PK, inv: PK) =>
+  const positionPda = (o: PK, inv: PK) =>
     pda(Buffer.from("posicao"), o.toBuffer(), inv.toBuffer());
-  const ata = (mint: PK, dono: PK) =>
-    getAssociatedTokenAddressSync(mint, dono, true);
-  const saldo = async (conta: PK) =>
-    Number((await getAccount(conn, conta)).amount);
+  const ata = (mint: PK, owner: PK) =>
+    getAssociatedTokenAddressSync(mint, owner, true);
+  const balance = async (account: PK) =>
+    Number((await getAccount(conn, account)).amount);
 
-  async function carteira(sol = 2) {
+  async function wallet(sol = 2) {
     const kp = Keypair.generate();
     const sig = await conn.requestAirdrop(kp.publicKey, sol * LAMPORTS_PER_SOL);
     await conn.confirmTransaction(sig, "confirmed");
     return kp;
   }
 
-  async function esperaErro(promessa: Promise<unknown>, trecho: string) {
+  async function expectError(promise: Promise<unknown>, fragment: string) {
     try {
-      await promessa;
+      await promise;
     } catch (e) {
-      const texto = String(e) + JSON.stringify((e as any).logs ?? []);
-      assert.include(texto, trecho, texto.slice(0, 1500));
+      const text = String(e) + JSON.stringify((e as any).logs ?? []);
+      assert.include(text, fragment, text.slice(0, 1500));
       return;
     }
-    assert.fail(`deveria ter falhado com ${trecho}`);
+    assert.fail(`should have failed with ${fragment}`);
   }
 
-  const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  const agora = async () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const now = async () => {
     const slot = await conn.getSlot("confirmed");
     return (await conn.getBlockTime(slot))!;
   };
 
-  async function faucet(kp: anchor.web3.Keypair, valor: BN) {
+  async function faucet(kp: anchor.web3.Keypair, amount: BN) {
     await program.methods
-      .faucetMbrl(valor)
-      .accountsPartial({ usuario: kp.publicKey, mintMoeda })
+      .faucetMbrl(amount)
+      .accountsPartial({ usuario: kp.publicKey, mintMoeda: currencyMint })
       .signers([kp])
       .rpc();
   }
 
-  function parametros(over: Partial<Record<string, any>> = {}, prazo = 0) {
+  // Offering parameters (the field names are the program's own).
+  function params(over: Partial<Record<string, any>> = {}, deadline = 0) {
     return {
       nome: "Cotas Padaria Silva",
       simbolo: "PSILVA",
@@ -84,193 +88,189 @@ describe("niara-pmes (Solana)", () => {
       metaMinima: mbrl(1000),
       metaMaxima: mbrl(1200),
       precoPorCota: mbrl(10),
-      prazo: new BN(prazo),
+      prazo: new BN(deadline),
       ...over,
     };
   }
 
-  async function criarOferta(emissor: anchor.web3.Keypair, p: any) {
-    const conta = await program.account.emissor.fetchNullable(
-      emissorPda(emissor.publicKey)
+  async function createOffering(issuer: anchor.web3.Keypair, p: any) {
+    const account = await program.account.emissor.fetchNullable(
+      issuerPda(issuer.publicKey)
     );
-    const oferta = ofertaPda(emissor.publicKey, conta?.totalOfertas ?? 0);
+    const offering = offeringPda(issuer.publicKey, account?.totalOfertas ?? 0);
     await program.methods
       .criarOferta(p)
-      .accountsPartial({ emissorWallet: emissor.publicKey, oferta, mintMoeda })
-      .signers([emissor])
+      .accountsPartial({
+        emissorWallet: issuer.publicKey,
+        oferta: offering,
+        mintMoeda: currencyMint,
+      })
+      .signers([issuer])
       .rpc();
-    return oferta;
+    return offering;
   }
 
-  async function aportar(inv: anchor.web3.Keypair, oferta: PK, valor: BN) {
-    const o = await program.account.oferta.fetch(oferta);
+  async function invest(inv: anchor.web3.Keypair, offering: PK, amount: BN) {
+    const o = await program.account.oferta.fetch(offering);
     await program.methods
-      .aportar(valor)
+      .aportar(amount)
       .accountsPartial({
         investidor: inv.publicKey,
-        oferta,
-        origem: ata(mintMoeda, inv.publicKey),
+        oferta: offering,
+        origem: ata(currencyMint, inv.publicKey),
         cofre: o.cofre,
-        mintMoeda,
+        mintMoeda: currencyMint,
       })
       .signers([inv])
       .rpc();
   }
 
-  async function encerrar(oferta: PK) {
-    await program.methods.encerrar().accountsPartial({ oferta }).rpc();
+  async function close(offering: PK) {
+    await program.methods.encerrar().accountsPartial({ oferta: offering }).rpc();
   }
 
-  let emissor: anchor.web3.Keypair;
+  let issuer: anchor.web3.Keypair;
 
-  // ── inicialização ──────────────────────────────────────────────────────────
-  it("só a autoridade de upgrade inicializa; taxa limitada a 1%", async () => {
-    const dadosPrograma = PublicKey.findProgramAddressSync(
+  // ── initialization ─────────────────────────────────────────────────────────
+  it("only the upgrade authority can initialize; fee capped at 1%", async () => {
+    const programData = PublicKey.findProgramAddressSync(
       [program.programId.toBuffer()],
       BPF_UPGRADEABLE
     )[0];
-    const intruso = await carteira();
-    await esperaErro(
+    const intruder = await wallet();
+    await expectError(
       program.methods
-        .inicializar(protocolo.publicKey, 100, mbrl(200))
-        .accountsPartial({ admin: intruso.publicKey, dadosPrograma })
-        .signers([intruso])
+        .inicializar(protocol.publicKey, 100, mbrl(200))
+        .accountsPartial({ admin: intruder.publicKey, dadosPrograma: programData })
+        .signers([intruder])
         .rpc(),
       "NaoAutorizado"
     );
-    await esperaErro(
+    await expectError(
       program.methods
-        .inicializar(protocolo.publicKey, 101, mbrl(200))
-        .accountsPartial({ admin: admin.publicKey, dadosPrograma })
+        .inicializar(protocol.publicKey, 101, mbrl(200))
+        .accountsPartial({ admin: admin.publicKey, dadosPrograma: programData })
         .rpc(),
       "TaxaAcimaDoMaximo"
     );
     await program.methods
-      .inicializar(protocolo.publicKey, 100, mbrl(200))
-      .accountsPartial({ admin: admin.publicKey, dadosPrograma })
+      .inicializar(protocol.publicKey, 100, mbrl(200))
+      .accountsPartial({ admin: admin.publicKey, dadosPrograma: programData })
       .rpc();
     const c = await program.account.config.fetch(configPda);
     assert.isTrue(c.admin.equals(admin.publicKey));
-    assert.isTrue(c.mintMoeda.equals(mintMoeda));
+    assert.isTrue(c.mintMoeda.equals(currencyMint));
     assert.equal(c.taxaBps, 100);
     assert.equal(c.tetoPorInvestidor.toString(), mbrl(200).toString());
   });
 
-  it("faucet de mBRL aberto, com teto por chamada", async () => {
-    const u = await carteira();
+  it("mBRL faucet is open, with a per-call cap", async () => {
+    const u = await wallet();
     await faucet(u, mbrl(500));
-    assert.equal(await saldo(ata(mintMoeda, u.publicKey)), 500 * MBRL);
-    await esperaErro(faucet(u, new BN(0)), "FaucetInvalido");
-    await esperaErro(faucet(u, mbrl(1_000_001)), "FaucetInvalido");
+    assert.equal(await balance(ata(currencyMint, u.publicKey)), 500 * MBRL);
+    await expectError(faucet(u, new BN(0)), "FaucetInvalido");
+    await expectError(faucet(u, mbrl(1_000_001)), "FaucetInvalido");
   });
 
-  // ── criação ────────────────────────────────────────────────────────────────
-  it("criar oferta exige emissor autorizado e aplica os limites da Res. CVM 88", async () => {
-    emissor = await carteira(5);
-    const t = await agora();
-    // sem autorização (conta Emissor nem existe)
-    await esperaErro(
-      criarOferta(emissor, parametros({}, t + 3600)),
+  // ── creation ───────────────────────────────────────────────────────────────
+  it("creating an offering requires an authorized issuer and applies the CVM Res. 88 limits", async () => {
+    issuer = await wallet(5);
+    const t = await now();
+    // not authorized (the Emissor account doesn't even exist)
+    await expectError(
+      createOffering(issuer, params({}, t + 3600)),
       "AccountNotInitialized"
     );
 
     await program.methods
-      .definirEmissor(emissor.publicKey, false)
+      .definirEmissor(issuer.publicKey, false)
       .accountsPartial({ admin: admin.publicKey })
       .rpc();
-    await esperaErro(
-      criarOferta(emissor, parametros({}, t + 3600)),
+    await expectError(
+      createOffering(issuer, params({}, t + 3600)),
       "EmissorNaoAutorizado"
     );
 
-    const intruso = await carteira();
-    await esperaErro(
+    const intruder = await wallet();
+    await expectError(
       program.methods
-        .definirEmissor(intruso.publicKey, true)
-        .accountsPartial({ admin: intruso.publicKey })
-        .signers([intruso])
+        .definirEmissor(intruder.publicKey, true)
+        .accountsPartial({ admin: intruder.publicKey })
+        .signers([intruder])
         .rpc(),
       "NaoAutorizado"
     );
     await program.methods
-      .definirEmissor(emissor.publicKey, true)
+      .definirEmissor(issuer.publicKey, true)
       .accountsPartial({ admin: admin.publicKey })
       .rpc();
 
-    const casos: [any, string][] = [
-      [parametros({}, t + 181 * 86400), "PrazoExcedeLimite"],
-      [parametros({}, t - 10), "PrazoExcedeLimite"],
-      [parametros({ precoPorCota: new BN(0) }, t + 3600), "PrecoInvalido"],
-      [parametros({ metaMinima: mbrl(1300) }, t + 3600), "MetasInvalidas"],
-      [parametros({ metaMinima: new BN(0) }, t + 3600), "MetasInvalidas"],
+    const cases: [any, string][] = [
+      [params({}, t + 181 * 86400), "PrazoExcedeLimite"],
+      [params({}, t - 10), "PrazoExcedeLimite"],
+      [params({ precoPorCota: new BN(0) }, t + 3600), "PrecoInvalido"],
+      [params({ metaMinima: mbrl(1300) }, t + 3600), "MetasInvalidas"],
+      [params({ metaMinima: new BN(0) }, t + 3600), "MetasInvalidas"],
       [
-        parametros(
+        params(
           { metaMinima: mbrl(14_000_000), metaMaxima: mbrl(15_000_010) },
           t + 3600
         ),
         "MetaMaximaExcedeTeto",
       ],
-      [
-        parametros({ metaMaxima: mbrl(1260) }, t + 3600),
-        "LoteAdicionalExcedeLimite",
-      ],
-      [
-        parametros({ precoPorCota: mbrl(7) }, t + 3600),
-        "PrecoNaoDivideMetaMaxima",
-      ],
-      [parametros({ simbolo: "SIMBOLOLONGO" }, t + 3600), "MetadadosInvalidos"],
-      [parametros({ empresa: "   " }, t + 3600), "MetadadosInvalidos"],
+      [params({ metaMaxima: mbrl(1260) }, t + 3600), "LoteAdicionalExcedeLimite"],
+      [params({ precoPorCota: mbrl(7) }, t + 3600), "PrecoNaoDivideMetaMaxima"],
+      [params({ simbolo: "SIMBOLOLONGO" }, t + 3600), "MetadadosInvalidos"],
+      [params({ empresa: "   " }, t + 3600), "MetadadosInvalidos"],
     ];
-    for (const [p, erro] of casos)
-      await esperaErro(criarOferta(emissor, p), erro);
+    for (const [p, error] of cases)
+      await expectError(createOffering(issuer, p), error);
   });
 
-  // ── caminho de sucesso ─────────────────────────────────────────────────────
-  let ofertaSucesso: PK;
+  // ── success path ───────────────────────────────────────────────────────────
+  let successOffering: PK;
   let inv1: anchor.web3.Keypair;
   let inv2: anchor.web3.Keypair;
 
-  it("cria a oferta com escrow, mint de cotas e parâmetros congelados", async () => {
-    const t = await agora();
-    ofertaSucesso = await criarOferta(emissor, parametros({}, t + 3600));
-    const o = await program.account.oferta.fetch(ofertaSucesso);
+  it("creates the offering with escrow, share mint and frozen parameters", async () => {
+    const t = await now();
+    successOffering = await createOffering(issuer, params({}, t + 3600));
+    const o = await program.account.oferta.fetch(successOffering);
     assert.deepEqual(o.estado, { aberta: {} });
     assert.equal(o.indice, 0);
     assert.equal(o.taxaBps, 100);
     assert.equal(o.tetoPorInvestidor.toString(), mbrl(200).toString());
-    assert.isTrue(o.protocoloWallet.equals(protocolo.publicKey));
+    assert.isTrue(o.protocoloWallet.equals(protocol.publicKey));
     assert.equal(o.empresa, "Padaria Silva (demonstracao)");
-    const e = await program.account.emissor.fetch(
-      emissorPda(emissor.publicKey)
-    );
-    assert.isTrue(e.ofertaAberta!.equals(ofertaSucesso));
+    const e = await program.account.emissor.fetch(issuerPda(issuer.publicKey));
+    assert.isTrue(e.ofertaAberta!.equals(successOffering));
     assert.equal(e.totalOfertas, 1);
 
-    // uma oferta aberta por emissor
-    await esperaErro(
-      criarOferta(emissor, parametros({}, t + 3600)),
+    // one open offering per issuer
+    await expectError(
+      createOffering(issuer, params({}, t + 3600)),
       "OfertaAnteriorAindaAberta"
     );
   });
 
-  it("aporte: múltiplo do preço, teto do varejo, qualificado sem teto, meta máxima", async () => {
-    inv1 = await carteira();
-    inv2 = await carteira();
+  it("investment: multiple of the price, retail cap, qualified without cap, maximum target", async () => {
+    inv1 = await wallet();
+    inv2 = await wallet();
     await faucet(inv1, mbrl(5000));
     await faucet(inv2, mbrl(5000));
 
-    await esperaErro(
-      aportar(inv1, ofertaSucesso, mbrl(15)),
+    await expectError(
+      invest(inv1, successOffering, mbrl(15)),
       "AporteNaoMultiploDoPreco"
     );
-    await esperaErro(
-      aportar(inv1, ofertaSucesso, new BN(0)),
+    await expectError(
+      invest(inv1, successOffering, new BN(0)),
       "AporteNaoMultiploDoPreco"
     );
-    await aportar(inv1, ofertaSucesso, mbrl(150));
-    await aportar(inv1, ofertaSucesso, mbrl(50)); // chega no teto de 200
-    await esperaErro(
-      aportar(inv1, ofertaSucesso, mbrl(10)),
+    await invest(inv1, successOffering, mbrl(150));
+    await invest(inv1, successOffering, mbrl(50)); // reaches the 200 cap
+    await expectError(
+      invest(inv1, successOffering, mbrl(10)),
       "ExcedeTetoInvestidor"
     );
 
@@ -278,123 +278,121 @@ describe("niara-pmes (Solana)", () => {
       .definirQualificado(inv2.publicKey, true)
       .accountsPartial({ admin: admin.publicKey })
       .rpc();
-    await aportar(inv2, ofertaSucesso, mbrl(900)); // qualificado: sem teto
-    await esperaErro(
-      aportar(inv2, ofertaSucesso, mbrl(110)),
+    await invest(inv2, successOffering, mbrl(900)); // qualified: no cap
+    await expectError(
+      invest(inv2, successOffering, mbrl(110)),
       "ExcedeMetaMaxima"
     );
 
-    const o = await program.account.oferta.fetch(ofertaSucesso);
+    const o = await program.account.oferta.fetch(successOffering);
     assert.equal(o.totalArrecadado.toString(), mbrl(1100).toString());
     assert.equal(o.totalInvestidores, 2);
-    assert.equal(await saldo(o.cofre), 1100 * MBRL);
+    assert.equal(await balance(o.cofre), 1100 * MBRL);
     const p1 = await program.account.posicao.fetch(
-      posicaoPda(ofertaSucesso, inv1.publicKey)
+      positionPda(successOffering, inv1.publicKey)
     );
     assert.equal(p1.aportado.toString(), mbrl(200).toString());
   });
 
-  it("pausa do admin bloqueia aporte; encerrar antes do prazo exige meta máxima", async () => {
+  it("admin pause blocks investment; closing before the deadline requires the maximum target", async () => {
     await program.methods
       .pausarOferta(true)
-      .accountsPartial({ admin: admin.publicKey, oferta: ofertaSucesso })
+      .accountsPartial({ admin: admin.publicKey, oferta: successOffering })
       .rpc();
-    await esperaErro(aportar(inv2, ofertaSucesso, mbrl(100)), "OfertaPausada");
+    await expectError(invest(inv2, successOffering, mbrl(100)), "OfertaPausada");
     await program.methods
       .pausarOferta(false)
-      .accountsPartial({ admin: admin.publicKey, oferta: ofertaSucesso })
+      .accountsPartial({ admin: admin.publicKey, oferta: successOffering })
       .rpc();
 
-    await esperaErro(encerrar(ofertaSucesso), "EncerramentoPrematuro");
-    await aportar(inv2, ofertaSucesso, mbrl(100)); // fecha exatamente na meta máxima
-    await encerrar(ofertaSucesso);
-    const o = await program.account.oferta.fetch(ofertaSucesso);
+    await expectError(close(successOffering), "EncerramentoPrematuro");
+    await invest(inv2, successOffering, mbrl(100)); // closes exactly at the maximum target
+    await close(successOffering);
+    const o = await program.account.oferta.fetch(successOffering);
     assert.deepEqual(o.estado, { encerradaSucesso: {} });
-    const e = await program.account.emissor.fetch(
-      emissorPda(emissor.publicKey)
-    );
+    const e = await program.account.emissor.fetch(issuerPda(issuer.publicKey));
     assert.isNull(e.ofertaAberta);
-    await esperaErro(encerrar(ofertaSucesso), "OfertaNaoAberta");
-    await esperaErro(aportar(inv2, ofertaSucesso, mbrl(10)), "OfertaNaoAberta");
+    await expectError(close(successOffering), "OfertaNaoAberta");
+    await expectError(invest(inv2, successOffering, mbrl(10)), "OfertaNaoAberta");
   });
 
-  it("resgate: cotas = aportado / preço, uma vez, e intransferíveis", async () => {
-    const o = await program.account.oferta.fetch(ofertaSucesso);
-    const resgatar = (inv: anchor.web3.Keypair) =>
+  it("redemption: shares = invested / price, once, and non-transferable", async () => {
+    const o = await program.account.oferta.fetch(successOffering);
+    const redeem = (inv: anchor.web3.Keypair) =>
       program.methods
         .resgatarCotas()
         .accountsPartial({
           investidor: inv.publicKey,
-          oferta: ofertaSucesso,
+          oferta: successOffering,
           mintCota: o.mintCota,
         })
         .signers([inv])
         .rpc();
-    await resgatar(inv1);
-    await resgatar(inv2);
-    const contaCotas1 = ata(o.mintCota, inv1.publicKey);
-    assert.equal(await saldo(contaCotas1), 20);
-    assert.equal(await saldo(ata(o.mintCota, inv2.publicKey)), 100);
-    assert.isTrue((await getAccount(conn, contaCotas1)).isFrozen);
-    await esperaErro(resgatar(inv1), "CotasJaResgatadas");
+    await redeem(inv1);
+    await redeem(inv2);
+    const shareAccount1 = ata(o.mintCota, inv1.publicKey);
+    assert.equal(await balance(shareAccount1), 20);
+    assert.equal(await balance(ata(o.mintCota, inv2.publicKey)), 100);
+    assert.isTrue((await getAccount(conn, shareAccount1)).isFrozen);
+    await expectError(redeem(inv1), "CotasJaResgatadas");
 
-    // transferência direta pelo SPL Token falha: conta congelada
-    const destino = ata(o.mintCota, inv2.publicKey);
+    // a direct SPL Token transfer fails: the account is frozen
+    const destination = ata(o.mintCota, inv2.publicKey);
     const tx = new Transaction().add(
-      createTransferInstruction(contaCotas1, destino, inv1.publicKey, 1)
+      createTransferInstruction(shareAccount1, destination, inv1.publicKey, 1)
     );
-    await esperaErro(provider.sendAndConfirm(tx, [inv1]), "0x11"); // AccountFrozen
+    await expectError(provider.sendAndConfirm(tx, [inv1]), "0x11"); // AccountFrozen
 
-    // quem não aportou não resgata
-    const curioso = await carteira();
-    await esperaErro(
+    // someone who didn't invest can't redeem
+    const bystander = await wallet();
+    await expectError(
       program.methods
         .resgatarCotas()
         .accountsPartial({
-          investidor: curioso.publicKey,
-          oferta: ofertaSucesso,
+          investidor: bystander.publicKey,
+          oferta: successOffering,
           mintCota: o.mintCota,
         })
-        .signers([curioso])
+        .signers([bystander])
         .rpc(),
       "AccountNotInitialized"
     );
   });
 
-  it("liberação: emissor recebe total − 1%, protocolo recebe a taxa, uma vez só", async () => {
-    const o = await program.account.oferta.fetch(ofertaSucesso);
-    const liberar = () =>
+  it("release: issuer gets total − 1%, protocol gets the fee, only once", async () => {
+    const o = await program.account.oferta.fetch(successOffering);
+    const release = () =>
       program.methods
         .liberarParaEmissor()
         .accountsPartial({
           pagador: admin.publicKey,
-          oferta: ofertaSucesso,
+          oferta: successOffering,
           cofre: o.cofre,
-          mintMoeda,
-          emissorWallet: emissor.publicKey,
-          protocoloWallet: protocolo.publicKey,
+          mintMoeda: currencyMint,
+          emissorWallet: issuer.publicKey,
+          protocoloWallet: protocol.publicKey,
         })
         .rpc();
-    await liberar();
-    assert.equal(await saldo(ata(mintMoeda, emissor.publicKey)), 1188 * MBRL);
-    assert.equal(await saldo(ata(mintMoeda, protocolo.publicKey)), 12 * MBRL);
-    assert.equal(await saldo(o.cofre), 0);
-    await esperaErro(liberar(), "RecursosJaLiberados");
+    await release();
+    assert.equal(await balance(ata(currencyMint, issuer.publicKey)), 1188 * MBRL);
+    assert.equal(await balance(ata(currencyMint, protocol.publicKey)), 12 * MBRL);
+    assert.equal(await balance(o.cofre), 0);
+    await expectError(release(), "RecursosJaLiberados");
     assert.isTrue(
-      (await program.account.oferta.fetch(ofertaSucesso)).recursosLiberados
+      (await program.account.oferta.fetch(successOffering)).recursosLiberados
     );
   });
 
-  it("sucesso não permite reembolso", async () => {
-    const o = await program.account.oferta.fetch(ofertaSucesso);
-    await esperaErro(
+  it("a successful offering does not allow refunds", async () => {
+    const o = await program.account.oferta.fetch(successOffering);
+    await expectError(
       program.methods
         .reembolsar()
         .accountsPartial({
           investidor: inv1.publicKey,
-          oferta: ofertaSucesso,
+          oferta: successOffering,
           cofre: o.cofre,
-          mintMoeda,
+          mintMoeda: currencyMint,
         })
         .signers([inv1])
         .rpc(),
@@ -402,143 +400,141 @@ describe("niara-pmes (Solana)", () => {
     );
   });
 
-  // ── caminho de falha ───────────────────────────────────────────────────────
-  it("abaixo da meta mínima no prazo: falha, aporte após o prazo é recusado, reembolso exato", async () => {
-    const t = await agora();
-    const oferta = await criarOferta(
-      emissor,
-      parametros({ serie: "Serie B" }, t + 6)
+  // ── failure path ───────────────────────────────────────────────────────────
+  it("below the minimum target at the deadline: fails, late investment is rejected, exact refund", async () => {
+    const t = await now();
+    const offering = await createOffering(
+      issuer,
+      params({ serie: "Serie B" }, t + 6)
     );
-    assert.isTrue(oferta.equals(ofertaPda(emissor.publicKey, 1)));
-    await aportar(inv1, oferta, mbrl(100));
-    await esperaErro(encerrar(oferta), "EncerramentoPrematuro");
+    assert.isTrue(offering.equals(offeringPda(issuer.publicKey, 1)));
+    await invest(inv1, offering, mbrl(100));
+    await expectError(close(offering), "EncerramentoPrematuro");
 
-    await dormir(8000);
-    await esperaErro(aportar(inv1, oferta, mbrl(10)), "PrazoExpirado");
-    await encerrar(oferta);
-    const o = await program.account.oferta.fetch(oferta);
+    await sleep(8000);
+    await expectError(invest(inv1, offering, mbrl(10)), "PrazoExpirado");
+    await close(offering);
+    const o = await program.account.oferta.fetch(offering);
     assert.deepEqual(o.estado, { encerradaFalha: {} });
 
-    const antes = await saldo(ata(mintMoeda, inv1.publicKey));
-    const reembolsar = () =>
+    const before = await balance(ata(currencyMint, inv1.publicKey));
+    const refund = () =>
       program.methods
         .reembolsar()
         .accountsPartial({
           investidor: inv1.publicKey,
-          oferta,
+          oferta: offering,
           cofre: o.cofre,
-          mintMoeda,
+          mintMoeda: currencyMint,
         })
         .signers([inv1])
         .rpc();
-    await reembolsar();
+    await refund();
     assert.equal(
-      (await saldo(ata(mintMoeda, inv1.publicKey))) - antes,
+      (await balance(ata(currencyMint, inv1.publicKey))) - before,
       100 * MBRL
     );
-    await esperaErro(reembolsar(), "JaReembolsado");
-    await esperaErro(
+    await expectError(refund(), "JaReembolsado");
+    await expectError(
       program.methods
         .resgatarCotas()
         .accountsPartial({
           investidor: inv1.publicKey,
-          oferta,
+          oferta: offering,
           mintCota: o.mintCota,
         })
         .signers([inv1])
         .rpc(),
       "OfertaNaoSucedida"
     );
-    await esperaErro(
+    await expectError(
       program.methods
         .liberarParaEmissor()
         .accountsPartial({
           pagador: admin.publicKey,
-          oferta,
+          oferta: offering,
           cofre: o.cofre,
-          mintMoeda,
-          emissorWallet: emissor.publicKey,
-          protocoloWallet: protocolo.publicKey,
+          mintMoeda: currencyMint,
+          emissorWallet: issuer.publicKey,
+          protocoloWallet: protocol.publicKey,
         })
         .rpc(),
       "OfertaNaoSucedida"
     );
   });
 
-  it("cancelamento só pelo admin, mesmo acima do piso, e libera nova oferta do emissor", async () => {
-    const t = await agora();
-    const oferta = await criarOferta(
-      emissor,
-      parametros({ serie: "Serie C" }, t + 3600)
+  it("only the admin can cancel, even above the minimum, and it frees the issuer for a new offering", async () => {
+    const t = await now();
+    const offering = await createOffering(
+      issuer,
+      params({ serie: "Serie C" }, t + 3600)
     );
-    await aportar(inv2, oferta, mbrl(1000)); // acima da meta mínima
+    await invest(inv2, offering, mbrl(1000)); // above the minimum target
 
-    const intruso = await carteira();
-    await esperaErro(
+    const intruder = await wallet();
+    await expectError(
       program.methods
         .cancelarOferta()
-        .accountsPartial({ admin: intruso.publicKey, oferta })
-        .signers([intruso])
+        .accountsPartial({ admin: intruder.publicKey, oferta: offering })
+        .signers([intruder])
         .rpc(),
       "NaoAutorizado"
     );
     await program.methods
       .cancelarOferta()
-      .accountsPartial({ admin: admin.publicKey, oferta })
+      .accountsPartial({ admin: admin.publicKey, oferta: offering })
       .rpc();
-    const o = await program.account.oferta.fetch(oferta);
+    const o = await program.account.oferta.fetch(offering);
     assert.deepEqual(o.estado, { encerradaFalha: {} });
 
     await program.methods
       .reembolsar()
       .accountsPartial({
         investidor: inv2.publicKey,
-        oferta,
+        oferta: offering,
         cofre: o.cofre,
-        mintMoeda,
+        mintMoeda: currencyMint,
       })
       .signers([inv2])
       .rpc();
-    assert.equal(await saldo(o.cofre), 0);
+    assert.equal(await balance(o.cofre), 0);
 
-    const e = await program.account.emissor.fetch(
-      emissorPda(emissor.publicKey)
-    );
+    const e = await program.account.emissor.fetch(issuerPda(issuer.publicKey));
     assert.isNull(e.ofertaAberta);
     assert.equal(e.totalOfertas, 3);
   });
 
-  it("aporte não aceita conta de origem de outra pessoa nem cofre de outra oferta", async () => {
-    const t = await agora();
-    const oferta = await criarOferta(
-      emissor,
-      parametros({ serie: "Serie D" }, t + 3600)
+  it("investment rejects someone else's source account and another offering's vault", async () => {
+    const t = await now();
+    const offering = await createOffering(
+      issuer,
+      params({ serie: "Serie D" }, t + 3600)
     );
-    const o = await program.account.oferta.fetch(oferta);
-    const outra = await program.account.oferta.fetch(ofertaSucesso);
-    await esperaErro(
+    const o = await program.account.oferta.fetch(offering);
+    const other = await program.account.oferta.fetch(successOffering);
+    await expectError(
       program.methods
         .aportar(mbrl(10))
         .accountsPartial({
           investidor: inv1.publicKey,
-          oferta,
-          origem: ata(mintMoeda, inv2.publicKey),
+          oferta: offering,
+          origem: ata(currencyMint, inv2.publicKey),
           cofre: o.cofre,
-          mintMoeda,
+          mintMoeda: currencyMint,
         })
         .signers([inv1])
         .rpc(),
       "ConstraintTokenOwner"
     );
-    await esperaErro(
+    await expectError(
       program.methods
         .aportar(mbrl(10))
         .accountsPartial({
           investidor: inv1.publicKey,
-          oferta,
-          origem: ata(mintMoeda, inv1.publicKey),
-          cofre: outra.cofre,
-          mintMoeda,
+          oferta: offering,
+          origem: ata(currencyMint, inv1.publicKey),
+          cofre: other.cofre,
+          mintMoeda: currencyMint,
         })
         .signers([inv1])
         .rpc(),

@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 
 use crate::{constants::*, error::ErrorCode, state::*};
 
-/// Permissionless, como na EVM: qualquer um encerra depois do prazo, ou antes
-/// se a meta máxima foi atingida exatamente.
+/// Permissionless, as on EVM: anyone can close after the deadline, or earlier
+/// if the maximum target was reached exactly.
 #[derive(Accounts)]
 pub struct Encerrar<'info> {
     #[account(mut)]

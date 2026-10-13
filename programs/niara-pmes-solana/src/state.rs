@@ -2,13 +2,13 @@ use anchor_lang::prelude::*;
 
 use crate::constants::*;
 
-/// Configuração global (PDA ["config"]). Equivale aos parâmetros do
-/// `OfertaOrquestrador` + papel de admin.
+/// Global configuration (PDA ["config"]). Equivalent to the parameters of
+/// `OfertaOrquestrador` plus the admin role.
 #[account]
 #[derive(InitSpace)]
 pub struct Config {
     pub admin: Pubkey,
-    /// Mint do MockBRL (PDA ["mbrl"]), autoridade = esta config.
+    /// MockBRL mint (PDA ["mbrl"]); authority = this config.
     pub mint_moeda: Pubkey,
     pub protocolo_wallet: Pubkey,
     pub taxa_bps: u16,
@@ -17,20 +17,20 @@ pub struct Config {
     pub bump_moeda: u8,
 }
 
-/// Emissor autorizado (PDA ["emissor", wallet]).
+/// Authorized issuer (PDA ["emissor", wallet]).
 #[account]
 #[derive(InitSpace)]
 pub struct Emissor {
     pub wallet: Pubkey,
     pub autorizado: bool,
-    /// Oferta ainda aberta deste emissor (no máximo uma, como na EVM).
+    /// This issuer's still-open offering (at most one, as on EVM).
     pub oferta_aberta: Option<Pubkey>,
-    /// Quantas ofertas já criou; é o índice da próxima (seed da oferta).
+    /// How many offerings it has created; also the index of the next one (offering seed).
     pub total_ofertas: u32,
     pub bump: u8,
 }
 
-/// Investidor qualificado (PDA ["qualificado", wallet]): sem teto por investidor.
+/// Qualified investor (PDA ["qualificado", wallet]): no per-investor cap.
 #[account]
 #[derive(InitSpace)]
 pub struct Qualificado {
@@ -46,16 +46,16 @@ pub enum Estado {
     EncerradaFalha,
 }
 
-/// Oferta de captação (PDA ["oferta", emissor, indice LE]). Junta o que na
-/// EVM é ParticipacaoToken (metadados) + OfertaCaptacao (escrow e regras).
+/// Fundraising offering (PDA ["oferta", issuer, index LE]). Combines what on
+/// EVM is ParticipacaoToken (metadata) + OfertaCaptacao (escrow and rules).
 #[account]
 #[derive(InitSpace)]
 pub struct Oferta {
     pub emissor: Pubkey,
     pub indice: u32,
-    /// Mint das cotas (PDA ["cota", oferta]), 0 casas, autoridade = oferta.
+    /// Share mint (PDA ["cota", offering]), 0 decimals; authority = the offering.
     pub mint_cota: Pubkey,
-    /// Conta de escrow em mBRL (PDA ["cofre", oferta]), autoridade = oferta.
+    /// Escrow account in mBRL (PDA ["cofre", offering]); authority = the offering.
     pub cofre: Pubkey,
     #[max_len(MAX_NOME)]
     pub nome: String,
@@ -63,7 +63,7 @@ pub struct Oferta {
     pub simbolo: String,
     #[max_len(MAX_EMPRESA)]
     pub empresa: String,
-    /// keccak256(CNPJ), igual ao `cnpjRef` da EVM: identifica sem expor o CNPJ.
+    /// keccak256(CNPJ), same as `cnpjRef` on EVM: identifies the company without exposing its CNPJ.
     pub cnpj_ref: [u8; 32],
     #[max_len(MAX_SERIE)]
     pub serie: String,
@@ -85,7 +85,7 @@ pub struct Oferta {
     pub bump_cofre: u8,
 }
 
-/// Posição de um investidor numa oferta (PDA ["posicao", oferta, investidor]).
+/// An investor's position in an offering (PDA ["posicao", offering, investor]).
 #[account]
 #[derive(InitSpace)]
 pub struct Posicao {
@@ -97,7 +97,7 @@ pub struct Posicao {
     pub bump: u8,
 }
 
-// ── eventos (mesmos nomes dos eventos do Solidity) ────────────────────────────
+// ── events (same names as the Solidity events) ───────────────────────────────
 
 #[event]
 pub struct EmissorDefinido {
