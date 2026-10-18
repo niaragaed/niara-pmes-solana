@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
 
-/// Mesmos nomes dos erros do Solidity, quando existe equivalente, para o site
-/// poder traduzir as duas redes com a mesma tabela.
+/// Same names as the Solidity errors where an equivalent exists, so the site
+/// can translate both networks with the same table. Variant names and messages
+/// stay in Portuguese: they are compiled into the program deployed on devnet.
 #[error_code]
 pub enum ErrorCode {
     #[msg("Somente o admin do programa")]

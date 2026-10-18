@@ -1,20 +1,23 @@
 /**
- * Administração do niara-pmes-solana pela linha de comando (carteira do admin =
- * autoridade de upgrade do programa).
+ * Command-line administration of niara-pmes-solana (admin wallet = the
+ * program's upgrade authority).
  *
  *   ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
  *   ANCHOR_WALLET=~/.config/solana/niara-deployer.json \
- *   npx ts-node -P tsconfig.json scripts/admin.ts <comando> [args]
+ *   npx ts-node -P tsconfig.json scripts/admin.ts <command> [args]
  *
- * Comandos:
- *   setup [protocoloWallet]   inicializa (taxa 1%, teto 20.000 mBRL) — idempotente
- *   autorizar <wallet>        autoriza uma carteira como emissora
- *   desautorizar <wallet>
- *   qualificar <wallet>       investidor qualificado (sem teto por investidor)
- *   desqualificar <wallet>
- *   demo                      cria as ofertas de demonstração (empresas fictícias)
- *   pausar <oferta> | despausar <oferta> | cancelar <oferta>
- *   listar                    lista as ofertas do programa
+ * Commands:
+ *   setup [protocolWallet]   initializes (1% fee, 20,000 mBRL cap); idempotent
+ *   authorize <wallet>       authorizes a wallet as an issuer
+ *   deauthorize <wallet>
+ *   qualify <wallet>         qualified investor (no per-investor cap)
+ *   disqualify <wallet>
+ *   demo                     creates the demo offerings (fictitious companies)
+ *   pause <offering> | unpause <offering> | cancel <offering>
+ *   list                     lists the program's offerings
+ *
+ * Program methods, account fields and seeds keep their Portuguese names
+ * because they belong to the program deployed on devnet.
  */
 import * as anchor from "@anchor-lang/core";
 import { BN, Program } from "@anchor-lang/core";
@@ -44,102 +47,104 @@ const BPF_UPGRADEABLE = new PublicKey(
 const pda = (...seeds: Buffer[]) =>
   PublicKey.findProgramAddressSync(seeds, program.programId)[0];
 const configPda = pda(Buffer.from("config"));
-const mintMoeda = pda(Buffer.from("mbrl"));
-const emissorPda = (w: PK) => pda(Buffer.from("emissor"), w.toBuffer());
-const ofertaPda = (w: PK, i: number) => {
+const currencyMint = pda(Buffer.from("mbrl"));
+const issuerPda = (w: PK) => pda(Buffer.from("emissor"), w.toBuffer());
+const offeringPda = (w: PK, i: number) => {
   const idx = Buffer.alloc(4);
   idx.writeUInt32LE(i);
   return pda(Buffer.from("oferta"), w.toBuffer(), idx);
 };
 
 /**
- * Empresas FICTÍCIAS de demonstração (mesma regra do site: nenhuma empresa,
- * CNPJ ou valor é real). Metas pequenas para dar para demonstrar o ciclo
- * inteiro com o faucet: 100 mBRL de mínima, 120 de máxima, 10 por cota.
+ * FICTITIOUS demo companies (same rule as the site: no company, CNPJ or amount
+ * is real). Small targets so the whole cycle can be demonstrated with the
+ * faucet: 100 mBRL minimum, 120 maximum, 10 per share. Company names and
+ * symbols are on-chain display data for Brazilian users, so they stay in Portuguese.
  */
 const DEMOS = [
   {
     slug: "mercearia-ponto-verde",
-    empresa: "Mercearia Ponto Verde (fictícia)",
-    simbolo: "MPVERDE",
+    company: "Mercearia Ponto Verde (fictícia)",
+    symbol: "MPVERDE",
   },
   {
     slug: "oficina-torque",
-    empresa: "Oficina Mecânica Torque (fictícia)",
-    simbolo: "OTORQUE",
+    company: "Oficina Mecânica Torque (fictícia)",
+    symbol: "OTORQUE",
   },
   {
     slug: "floricultura-jardim-sul",
-    empresa: "Floricultura Jardim Sul (fictícia)",
-    simbolo: "FJSUL",
+    company: "Floricultura Jardim Sul (fictícia)",
+    symbol: "FJSUL",
   },
 ];
-const PASTA_DEMO = path.join(__dirname, "../.demo-emissores");
+// Folder name kept as is: it holds the demo issuers' existing keypairs.
+const DEMO_DIR = path.join(__dirname, "../.demo-emissores");
 
-async function setup(protocolo?: string) {
+async function setup(protocolWallet?: string) {
   if (await program.account.config.fetchNullable(configPda)) {
-    console.log("config já inicializada:", configPda.toBase58());
+    console.log("config already initialized:", configPda.toBase58());
     return;
   }
-  const dadosPrograma = PublicKey.findProgramAddressSync(
+  const programData = PublicKey.findProgramAddressSync(
     [program.programId.toBuffer()],
     BPF_UPGRADEABLE
   )[0];
   const sig = await program.methods
     .inicializar(
-      protocolo ? new PublicKey(protocolo) : admin,
+      protocolWallet ? new PublicKey(protocolWallet) : admin,
       100,
       mbrl(20_000)
     )
-    .accountsPartial({ admin, dadosPrograma })
+    .accountsPartial({ admin, dadosPrograma: programData })
     .rpc();
-  console.log("inicializado:", sig);
+  console.log("initialized:", sig);
   console.log(
     "config:",
     configPda.toBase58(),
     " mint mBRL:",
-    mintMoeda.toBase58()
+    currencyMint.toBase58()
   );
 }
 
-async function definirEmissor(wallet: string, autorizado: boolean) {
+async function setIssuer(wallet: string, authorized: boolean) {
   const sig = await program.methods
-    .definirEmissor(new PublicKey(wallet), autorizado)
+    .definirEmissor(new PublicKey(wallet), authorized)
     .accountsPartial({ admin })
     .rpc();
-  console.log(`${autorizado ? "autorizado" : "desautorizado"} ${wallet}:`, sig);
+  console.log(`${authorized ? "authorized" : "deauthorized"} ${wallet}:`, sig);
 }
 
-async function definirQualificado(wallet: string, qualificado: boolean) {
+async function setQualified(wallet: string, qualified: boolean) {
   const sig = await program.methods
-    .definirQualificado(new PublicKey(wallet), qualificado)
+    .definirQualificado(new PublicKey(wallet), qualified)
     .accountsPartial({ admin })
     .rpc();
   console.log(
-    `${qualificado ? "qualificado" : "desqualificado"} ${wallet}:`,
+    `${qualified ? "qualified" : "disqualified"} ${wallet}:`,
     sig
   );
 }
 
-function emissorDemo(slug: string) {
-  fs.mkdirSync(PASTA_DEMO, { recursive: true });
-  const arquivo = path.join(PASTA_DEMO, `${slug}.json`);
-  if (fs.existsSync(arquivo)) {
+function demoIssuer(slug: string) {
+  fs.mkdirSync(DEMO_DIR, { recursive: true });
+  const file = path.join(DEMO_DIR, `${slug}.json`);
+  if (fs.existsSync(file)) {
     return Keypair.fromSecretKey(
-      Uint8Array.from(JSON.parse(fs.readFileSync(arquivo, "utf8")))
+      Uint8Array.from(JSON.parse(fs.readFileSync(file, "utf8")))
     );
   }
   const kp = Keypair.generate();
-  fs.writeFileSync(arquivo, JSON.stringify(Array.from(kp.secretKey)));
+  fs.writeFileSync(file, JSON.stringify(Array.from(kp.secretKey)));
   return kp;
 }
 
 async function demo() {
-  const agora = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000);
   for (const d of DEMOS) {
-    const kp = emissorDemo(d.slug);
-    const saldo = await provider.connection.getBalance(kp.publicKey);
-    if (saldo < 0.03 * LAMPORTS_PER_SOL) {
+    const kp = demoIssuer(d.slug);
+    const balance = await provider.connection.getBalance(kp.publicKey);
+    if (balance < 0.03 * LAMPORTS_PER_SOL) {
       const tx = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: admin,
@@ -149,69 +154,73 @@ async function demo() {
       );
       await provider.sendAndConfirm(tx);
     }
-    const conta = await program.account.emissor.fetchNullable(
-      emissorPda(kp.publicKey)
+    const account = await program.account.emissor.fetchNullable(
+      issuerPda(kp.publicKey)
     );
-    if (!conta?.autorizado) await definirEmissor(kp.publicKey.toBase58(), true);
-    const atual = await program.account.emissor.fetchNullable(
-      emissorPda(kp.publicKey)
+    if (!account?.autorizado) await setIssuer(kp.publicKey.toBase58(), true);
+    const current = await program.account.emissor.fetchNullable(
+      issuerPda(kp.publicKey)
     );
-    if (atual?.ofertaAberta) {
+    if (current?.ofertaAberta) {
       console.log(
-        `${d.empresa}: já tem oferta aberta ${atual.ofertaAberta.toBase58()}`
+        `${d.company}: already has an open offering ${current.ofertaAberta.toBase58()}`
       );
       continue;
     }
-    const oferta = ofertaPda(kp.publicKey, atual?.totalOfertas ?? 0);
+    const offering = offeringPda(kp.publicKey, current?.totalOfertas ?? 0);
     const cnpjRef = Array.from(
       createHash("sha256").update(`demo:${d.slug}`).digest()
     );
     const sig = await program.methods
       .criarOferta({
-        nome: `Cotas ${d.empresa.replace(" (fictícia)", "")}`.slice(0, 64),
-        simbolo: d.simbolo,
-        empresa: d.empresa,
+        nome: `Cotas ${d.company.replace(" (fictícia)", "")}`.slice(0, 64),
+        simbolo: d.symbol,
+        empresa: d.company,
         cnpjRef,
         serie: "Serie A",
         metaMinima: mbrl(100),
         metaMaxima: mbrl(120),
         precoPorCota: mbrl(10),
-        prazo: new BN(agora + 30 * 86400),
+        prazo: new BN(now + 30 * 86400),
       })
-      .accountsPartial({ emissorWallet: kp.publicKey, oferta, mintMoeda })
+      .accountsPartial({
+        emissorWallet: kp.publicKey,
+        oferta: offering,
+        mintMoeda: currencyMint,
+      })
       .signers([kp])
       .rpc();
-    console.log(`${d.empresa}: oferta ${oferta.toBase58()} — ${sig}`);
+    console.log(`${d.company}: offering ${offering.toBase58()} (${sig})`);
   }
 }
 
-async function adminOferta(
-  acao: "pausar" | "despausar" | "cancelar",
-  oferta: string
+async function adminOffering(
+  action: "pause" | "unpause" | "cancel",
+  offering: string
 ) {
-  const o = new PublicKey(oferta);
+  const o = new PublicKey(offering);
   const m =
-    acao === "cancelar"
+    action === "cancel"
       ? program.methods.cancelarOferta()
-      : program.methods.pausarOferta(acao === "pausar");
-  console.log(`${acao}:`, await m.accountsPartial({ admin, oferta: o }).rpc());
+      : program.methods.pausarOferta(action === "pause");
+  console.log(`${action}:`, await m.accountsPartial({ admin, oferta: o }).rpc());
 }
 
-async function listar() {
-  const ofertas = await program.account.oferta.all();
-  for (const { publicKey, account: o } of ofertas) {
-    const estado = Object.keys(o.estado)[0];
+async function list() {
+  const offerings = await program.account.oferta.all();
+  for (const { publicKey, account: o } of offerings) {
+    const state = Object.keys(o.estado)[0];
     console.log(
-      `${publicKey.toBase58()}  ${o.empresa}  ${estado}${
-        o.pausada ? " (pausada)" : ""
+      `${publicKey.toBase58()}  ${o.empresa}  ${state}${
+        o.pausada ? " (paused)" : ""
       }  ` +
         `${o.totalArrecadado.div(MBRL)}/${o.metaMinima.div(
           MBRL
         )}-${o.metaMaxima.div(MBRL)} mBRL  ` +
-        `emissor ${o.emissor.toBase58()}`
+        `issuer ${o.emissor.toBase58()}`
     );
   }
-  if (ofertas.length === 0) console.log("nenhuma oferta");
+  if (offerings.length === 0) console.log("no offerings");
 }
 
 async function main() {
@@ -219,25 +228,25 @@ async function main() {
   switch (cmd) {
     case "setup":
       return setup(arg);
-    case "autorizar":
-      return definirEmissor(arg, true);
-    case "desautorizar":
-      return definirEmissor(arg, false);
-    case "qualificar":
-      return definirQualificado(arg, true);
-    case "desqualificar":
-      return definirQualificado(arg, false);
+    case "authorize":
+      return setIssuer(arg, true);
+    case "deauthorize":
+      return setIssuer(arg, false);
+    case "qualify":
+      return setQualified(arg, true);
+    case "disqualify":
+      return setQualified(arg, false);
     case "demo":
       return demo();
-    case "pausar":
-    case "despausar":
-    case "cancelar":
-      return adminOferta(cmd, arg);
-    case "listar":
-      return listar();
+    case "pause":
+    case "unpause":
+    case "cancel":
+      return adminOffering(cmd, arg);
+    case "list":
+      return list();
     default:
       console.log(
-        "uso: admin.ts setup|autorizar|desautorizar|qualificar|desqualificar|demo|pausar|despausar|cancelar|listar"
+        "usage: admin.ts setup|authorize|deauthorize|qualify|disqualify|demo|pause|unpause|cancel|list"
       );
       process.exit(1);
   }

@@ -16,9 +16,9 @@ pub struct ParametrosOferta {
     pub prazo: i64,
 }
 
-/// Equivale ao `OfertaOrquestrador.criarOfertaCompleta`: numa instrução só,
-/// cria a oferta, o mint das cotas e o cofre de escrow, já com os limites da
-/// Res. CVM 88 aplicados.
+/// Equivalent to `OfertaOrquestrador.criarOfertaCompleta`: in a single
+/// instruction it creates the offering, the share mint and the escrow vault,
+/// with the CVM Resolution 88 limits applied.
 #[derive(Accounts)]
 pub struct CriarOferta<'info> {
     #[account(mut)]
@@ -39,9 +39,9 @@ pub struct CriarOferta<'info> {
         bump
     )]
     pub oferta: Box<Account<'info, Oferta>>,
-    /// Cotas: mint e congelamento pela própria oferta (só ela emite, e cada
-    /// conta de cotas é congelada no resgate — sem transferência, como a
-    /// `DenyAllTransferPolicy` da EVM).
+    /// Shares: minted and frozen by the offering itself (only it issues them, and
+    /// each share account is frozen on redemption, so no transfers, like the
+    /// EVM `DenyAllTransferPolicy`).
     #[account(
         init,
         payer = emissor_wallet,
@@ -89,7 +89,7 @@ pub fn handle_criar_oferta(ctx: Context<CriarOferta>, p: ParametrosOferta) -> Re
     let empresa = texto(&p.empresa, MAX_EMPRESA)?;
     let serie = texto(&p.serie, MAX_SERIE)?;
 
-    // Mesma ordem de validação do orquestrador EVM.
+    // Same validation order as the EVM orchestrator.
     require!(p.preco_por_cota > 0, ErrorCode::PrecoInvalido);
     let agora = Clock::get()?.unix_timestamp;
     require!(
@@ -131,7 +131,7 @@ pub fn handle_criar_oferta(ctx: Context<CriarOferta>, p: ParametrosOferta) -> Re
     oferta.preco_por_cota = p.preco_por_cota;
     oferta.abertura = agora;
     oferta.prazo = p.prazo;
-    // Taxa, teto e carteira do protocolo congelados na criação.
+    // Fee, cap and protocol wallet are frozen at creation.
     oferta.teto_por_investidor = config.teto_por_investidor;
     oferta.taxa_bps = config.taxa_bps;
     oferta.protocolo_wallet = config.protocolo_wallet;

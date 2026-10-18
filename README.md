@@ -113,9 +113,9 @@ npm install
 export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com
 export ANCHOR_WALLET=~/.config/solana/niara-deployer.json
 npx ts-node -P tsconfig.json scripts/admin.ts setup               # fee 1%, cap 20,000 mBRL
-npx ts-node -P tsconfig.json scripts/admin.ts autorizar <WALLET>  # issuer's Phantom wallet
+npx ts-node -P tsconfig.json scripts/admin.ts authorize <WALLET>  # issuer's Phantom wallet
 npx ts-node -P tsconfig.json scripts/admin.ts demo                # 3 fictitious demo offers
-npx ts-node -P tsconfig.json scripts/admin.ts listar
+npx ts-node -P tsconfig.json scripts/admin.ts list
 ```
 
 `target/deploy/niara_pmes_solana-keypair.json` (the program address) and `.demo-emissores/` are kept out of git.

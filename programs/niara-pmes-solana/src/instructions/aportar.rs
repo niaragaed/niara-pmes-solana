@@ -17,8 +17,8 @@ pub struct Aportar<'info> {
         bump
     )]
     pub posicao: Box<Account<'info, Posicao>>,
-    /// CHECK: PDA ["qualificado", investidor]. Pode não existir (investidor de
-    /// varejo); o seed garante que ninguém passa a conta de outra pessoa.
+    /// CHECK: PDA ["qualificado", investor]. May not exist (retail investor);
+    /// the seed guarantees nobody can pass someone else's account.
     #[account(seeds = [QUALIFICADO_SEED, investidor.key().as_ref()], bump)]
     pub qualificado: UncheckedAccount<'info>,
     #[account(

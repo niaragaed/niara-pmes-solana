@@ -6,8 +6,8 @@ use anchor_spl::{
 
 use crate::{constants::*, error::ErrorCode, state::*};
 
-/// Faucet de MockBRL — moeda de teste, sem valor. Na EVM o `mint` do MockBRL
-/// é aberto e sem limite; aqui é aberto com teto por chamada.
+/// MockBRL faucet: test currency with no value. On EVM the MockBRL `mint` is
+/// open and unlimited; here it is open with a per-call cap.
 #[derive(Accounts)]
 pub struct FaucetMbrl<'info> {
     #[account(mut)]

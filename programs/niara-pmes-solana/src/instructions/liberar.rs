@@ -6,8 +6,8 @@ use anchor_spl::{
 
 use crate::{constants::*, error::ErrorCode, state::*};
 
-/// Permissionless e única, como na EVM: em caso de sucesso, o escrow vai para
-/// o emissor, menos a taxa do protocolo (arredondada para baixo).
+/// Permissionless and one-time, as on EVM: on success, the escrow goes to the
+/// issuer, minus the protocol fee (rounded down).
 #[derive(Accounts)]
 pub struct LiberarParaEmissor<'info> {
     #[account(mut)]
@@ -18,7 +18,7 @@ pub struct LiberarParaEmissor<'info> {
     pub cofre: Box<Account<'info, TokenAccount>>,
     #[account(address = cofre.mint)]
     pub mint_moeda: Box<Account<'info, Mint>>,
-    /// CHECK: só serve de autoridade da conta de destino; amarrado à oferta.
+    /// CHECK: only used as the authority of the destination account; bound to the offering.
     #[account(address = oferta.emissor)]
     pub emissor_wallet: UncheckedAccount<'info>,
     #[account(
@@ -28,7 +28,7 @@ pub struct LiberarParaEmissor<'info> {
         associated_token::authority = emissor_wallet,
     )]
     pub destino_emissor: Box<Account<'info, TokenAccount>>,
-    /// CHECK: idem, carteira do protocolo gravada na oferta.
+    /// CHECK: same, the protocol wallet stored in the offering.
     #[account(address = oferta.protocolo_wallet)]
     pub protocolo_wallet: UncheckedAccount<'info>,
     #[account(

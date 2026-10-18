@@ -7,3 +7,7 @@ test-ledger
 .yarn
 .surfpool
 .demo-emissores
+
+# local Claude Code state; only the shared settings are versioned
+/.claude/*
+!/.claude/settings.json

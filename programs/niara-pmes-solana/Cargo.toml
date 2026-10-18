@@ -1,7 +1,7 @@
 [package]
 name = "niara-pmes-solana"
 version = "0.1.0"
-description = "Niara-PMEs na Solana: captação de PMEs (Res. CVM 88) com escrow on-chain"
+description = "Niara SMEs on Solana: SME fundraising (CVM Res. 88) with on-chain escrow"
 edition.workspace = true
 rust-version.workspace = true
 

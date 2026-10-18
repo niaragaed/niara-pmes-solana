@@ -1,6 +1,6 @@
-//! Instruções do admin. Na EVM essas funções ficam atrás de AccessControl +
-//! timelock; aqui o admin é uma carteira só (a mesma autoridade de upgrade do
-//! programa), o que é mais simples e mais centralizado — dito no README.
+//! Admin instructions. On EVM these functions sit behind AccessControl +
+//! timelock; here the admin is a single wallet (the same as the program's
+//! upgrade authority), which is simpler and more centralized, as the README says.
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token};
 
@@ -20,7 +20,7 @@ pub struct Inicializar<'info> {
     )]
     pub config: Account<'info, Config>,
 
-    /// MockBRL: autoridade de mint é a própria config (faucet controlado pelo programa).
+    /// MockBRL: the mint authority is the config itself (faucet controlled by the program).
     #[account(
         init,
         payer = admin,
@@ -31,8 +31,8 @@ pub struct Inicializar<'info> {
     )]
     pub mint_moeda: Account<'info, Mint>,
 
-    /// Só quem detém a autoridade de upgrade inicializa — impede que um
-    /// terceiro "sequestre" a config logo após o deploy.
+    /// Only the holder of the upgrade authority can initialize, which prevents a
+    /// third party from hijacking the config right after deployment.
     #[account(constraint = programa.programdata_address()? == Some(dados_programa.key()))]
     pub programa: Program<'info, NiaraPmesSolana>,
     #[account(constraint = dados_programa.upgrade_authority_address == Some(admin.key()) @ ErrorCode::NaoAutorizado)]
@@ -67,8 +67,8 @@ pub struct SomenteAdmin<'info> {
     pub config: Account<'info, Config>,
 }
 
-/// Vale só para ofertas criadas depois: taxa, teto e carteira do protocolo
-/// ficam gravados em cada oferta no momento da criação (como na EVM).
+/// Applies only to offerings created afterwards: fee, cap and protocol wallet
+/// are stored in each offering at creation time (as on EVM).
 pub fn handle_atualizar_config(
     ctx: Context<SomenteAdmin>,
     protocolo_wallet: Pubkey,
@@ -159,8 +159,8 @@ pub struct AdminOferta<'info> {
     pub emissor: Account<'info, Emissor>,
 }
 
-/// Pausa só bloqueia novos aportes; saques (resgate, reembolso, liberação)
-/// continuam livres — igual à EVM.
+/// Pausing only blocks new investments; withdrawals (redemption, refund, release)
+/// remain open, same as on EVM.
 pub fn handle_pausar_oferta(ctx: Context<AdminOferta>, pausada: bool) -> Result<()> {
     let oferta = &mut ctx.accounts.oferta;
     require!(oferta.estado == Estado::Aberta, ErrorCode::OfertaNaoAberta);
@@ -172,9 +172,9 @@ pub fn handle_pausar_oferta(ctx: Context<AdminOferta>, pausada: bool) -> Result<
     Ok(())
 }
 
-/// Cancela uma oferta aberta: vira EncerradaFalha e cada investidor reembolsa.
-/// Na EVM só um contrato tinha o papel para isso nas ofertas self-service (nenhuma
-/// carteira conseguia cancelar); aqui o admin consegue.
+/// Cancels an open offering: it becomes EncerradaFalha (closed, failed) and each
+/// investor claims a refund. On EVM only a contract held that role for self-service
+/// offerings (no wallet could cancel); here the admin can.
 pub fn handle_cancelar_oferta(ctx: Context<AdminOferta>) -> Result<()> {
     let oferta = &mut ctx.accounts.oferta;
     require!(oferta.estado == Estado::Aberta, ErrorCode::OfertaNaoAberta);

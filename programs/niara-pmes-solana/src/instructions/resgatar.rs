@@ -42,7 +42,7 @@ pub fn handle_resgatar_cotas(ctx: Context<ResgatarCotas>) -> Result<()> {
     require!(posicao.aportado > 0, ErrorCode::NadaAResgatar);
     posicao.cotas_resgatadas = true;
 
-    // Aporte é sempre múltiplo do preço, então a divisão é exata.
+    // Investments are always a multiple of the price, so the division is exact.
     let cotas = posicao.aportado / oferta.preco_por_cota;
 
     let emissor = oferta.emissor;
@@ -61,8 +61,8 @@ pub fn handle_resgatar_cotas(ctx: Context<ResgatarCotas>) -> Result<()> {
         ),
         cotas,
     )?;
-    // Cotas intransferíveis: a conta é congelada pela oferta logo após o mint.
-    // (Na EVM: DenyAllTransferPolicy. Mercado secundário fica para depois.)
+    // Non-transferable shares: the account is frozen by the offering right after the mint.
+    // (On EVM: DenyAllTransferPolicy. The secondary market comes later.)
     token::freeze_account(CpiContext::new_with_signer(
         ctx.accounts.token_program.key(),
         FreezeAccount {
